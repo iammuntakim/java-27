@@ -30,6 +30,7 @@ Build Tooling Configuration
 * Compilation Model: Highly isolated Java compilation tasks tailored to override internal packages without contaminating standard local SDK paths.
 
 Getting Started
+<img width="4000" height="2500" alt="Image" src="https://github.com/user-attachments/assets/08a06d4a-3187-4d37-aff0-8822b2ddef09" />
 
 Prerequisites
 * A validated Java Development Kit (JDK 21 or newer recommended for modern experimental features).
