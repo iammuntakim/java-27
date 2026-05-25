@@ -47,16 +47,11 @@ jobs:
         run: |
           tag="build"
           file="app/build/libs/java-27.jar"
-          
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          
           gh release delete "$tag" -y || true
           git tag -d "$tag" || true
           git push origin :refs/tags/$tag || true
           git tag "$tag"
           git push origin "$tag"
-          
-          gh release create "$tag" "$file" \
-              --title "java-27 $tag" \
-              --notes "Automated release from main branch"
+          gh release create "$tag" "$file" --title "java-27 $tag" --notes "Automated release from main branch"
