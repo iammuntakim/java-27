@@ -1,57 +1,35 @@
 name: build
 
 on:
-  push:
-    branches: [ "main" ]
-  pull_request:
-
-permissions:
-  contents: write
+    push:
+        branches: [ "main" ]
+    pull_request:
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.PAT_TOKEN }}
-          repository: iammuntakim/java-27
-          ssh-strict: true
-          ssh-user: git
-          persist-credentials: true
-          clean: true
-          sparse-checkout-cone-mode: true
-          fetch-depth: 1
-          fetch-tags: false
-          show-progress: true
-          lfs: false
-          submodules: false
-          set-safe-directory: true
+    build:
+        runs-on: ubuntu-latest
 
-      - name: Setup JDK
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: 21
+        steps:
+            - name: Checkout repo
+              uses: actions/checkout@v4
 
-      - name: Grant gradlew permission
-        run: chmod +x gradlew
+            - name: Setup JDK
+              uses: actions/setup-java@v4
+              with:
+                  distribution: temurin
+                  java-version: 25
 
-      - name: Build project
-        run: ./gradlew build
+            - name: Grant gradlew permission
+              run: chmod +x gradlew
 
-      - name: Create GitHub Release
-        env:
-          GH_TOKEN: ${{ secrets.PAT_TOKEN }}
-        run: |
-          tag="build"
-          file="app/build/libs/java-27.jar"
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          gh release delete "$tag" -y || true
-          git tag -d "$tag" || true
-          git push origin :refs/tags/$tag || true
-          git tag "$tag"
-          git push origin "$tag"
-          gh release create "$tag" "$file" --title "java-27 $tag" --notes "Automated release from main branch"
+            - name: Build plugin
+              run: ./gradlew build
+              
+            - name: Upload final build
+              uses: actions/upload-artifact@v4
+              with:
+                  name: plugin-build-artifacts
+                  path: build/libs/
+                  if-no-files-found: error
+                  retention-days: 5
+                  
