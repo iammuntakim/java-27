@@ -5,22 +5,23 @@ on:
     branches: [ "main" ]
   pull_request:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        build_type: [release, canary] # Added matrix support
-
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.PAT_TOKEN }}
 
       - name: Setup JDK
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: 21 # Changed to 21 to match your build.gradle.kts toolchain
+          java-version: 21
 
       - name: Grant gradlew permission
         run: chmod +x gradlew
@@ -32,27 +33,12 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.PAT_TOKEN }}
         run: |
-          if [ "${{ matrix.build_type }}" = "release" ]; then
-              tag="build"
-          else
-              tag="canary_build"
-          fi
-          
-          # Target the jar file built by Gradle
+          tag="build"
           file="app/build/libs/java-27.jar"
           
-          commit=$(git rev-parse --short HEAD)
-          branch=${GITHUB_REF#refs/heads/}
-          build_time=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
           
-          body=$(printf "java-27 automated build\n\nBranch: %s\nCommit: %s\nBuild type: %s\nBuild time: %s\nActor: %s\nRepository: %s\n" \
-              "$branch" \
-              "$commit" \
-              "${{ matrix.build_type }}" \
-              "$build_time" \
-              "$GITHUB_ACTOR" \
-              "$GITHUB_REPOSITORY")
-              
           gh release delete "$tag" -y || true
           git tag -d "$tag" || true
           git push origin :refs/tags/$tag || true
@@ -61,4 +47,4 @@ jobs:
           
           gh release create "$tag" "$file" \
               --title "java-27 $tag" \
-              --notes "$body"
+              --notes "Automated release from main branch"
