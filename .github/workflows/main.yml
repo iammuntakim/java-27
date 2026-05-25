@@ -1,32 +1,64 @@
 name: build
 
 on:
-    push:
-        branches: [ "main" ]
-    pull_request:
+  push:
+    branches: [ "main" ]
+  pull_request:
 
 jobs:
-    build:
-        runs-on: ubuntu-latest
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        build_type: [release, canary] # Added matrix support
 
-        steps:
-            - name: Checkout repo
-              uses: actions/checkout@v4
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
 
-            - name: Setup JDK
-              uses: actions/setup-java@v4
-              with:
-                  distribution: temurin
-                  java-version: 25
+      - name: Setup JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21 # Changed to 21 to match your build.gradle.kts toolchain
 
-            - name: Grant gradlew permission
-              run: chmod +x gradlew
+      - name: Grant gradlew permission
+        run: chmod +x gradlew
 
-            - name: Build plugin
-              run: ./gradlew build
+      - name: Build project
+        run: ./gradlew build
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.PAT_TOKEN }}
+        run: |
+          if [ "${{ matrix.build_type }}" = "release" ]; then
+              tag="build"
+          else
+              tag="canary_build"
+          fi
+          
+          # Target the jar file built by Gradle
+          file="app/build/libs/java-27.jar"
+          
+          commit=$(git rev-parse --short HEAD)
+          branch=${GITHUB_REF#refs/heads/}
+          build_time=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
+          
+          body=$(printf "java-27 automated build\n\nBranch: %s\nCommit: %s\nBuild type: %s\nBuild time: %s\nActor: %s\nRepository: %s\n" \
+              "$branch" \
+              "$commit" \
+              "${{ matrix.build_type }}" \
+              "$build_time" \
+              "$GITHUB_ACTOR" \
+              "$GITHUB_REPOSITORY")
               
-            - name: Upload final build
-              uses: actions/upload-artifact@v4
-              with:
-                  name: plugin_build
-                  path: build/libs/**
+          gh release delete "$tag" -y || true
+          git tag -d "$tag" || true
+          git push origin :refs/tags/$tag || true
+          git tag "$tag"
+          git push origin "$tag"
+          
+          gh release create "$tag" "$file" \
+              --title "java-27 $tag" \
+              --notes "$body"
