@@ -1,0 +1,142 @@
+#!/bin/bash
+
+CONFIG_DIR="$HOME/.config"
+CONFIG_FILE="$CONFIG_DIR/.push"
+
+mkdir -p "$CONFIG_DIR"
+touch "$CONFIG_FILE"
+
+_decode() {
+    if [ -s "$CONFIG_FILE" ]; then
+        base64 -d "$CONFIG_FILE" 2>/dev/null
+    fi
+}
+
+_encode() {
+    echo -e "REPO=$1\nBRANCH=$2\nREMOTE=$3\nFORCE_PUSH=$4\nPULL_BEFORE=$5\nGENERATE_LOG=$6\nDRY_RUN=$7\nADD_ALL=$8\nAUTO_TAG=$9\nSKIP_CI=${10}\nAMEND=${11}\nSQUASH_VAL=${12}\nREBASE=${13}\nSTASH_WORK=${14}\nTAG_NAME=${15}" | base64 > "$CONFIG_FILE"
+}
+
+RAW_DATA=$(_decode)
+LATEST_REPO=$(echo "$RAW_DATA" | grep "^REPO=" | cut -d'=' -f2)
+LATEST_BRANCH=$(echo "$RAW_DATA" | grep "^BRANCH=" | cut -d'=' -f2)
+
+FORCE_PUSH=$(echo "$RAW_DATA" | grep "^FORCE_PUSH=" | cut -d'=' -f2); FORCE_PUSH=${FORCE_PUSH:-false}
+PULL_BEFORE=$(echo "$RAW_DATA" | grep "^PULL_BEFORE=" | cut -d'=' -f2); PULL_BEFORE=${PULL_BEFORE:-false}
+GENERATE_LOG=$(echo "$RAW_DATA" | grep "^GENERATE_LOG=" | cut -d'=' -f2); GENERATE_LOG=${GENERATE_LOG:-false}
+DRY_RUN=$(echo "$RAW_DATA" | grep "^DRY_RUN=" | cut -d'=' -f2); DRY_RUN=${DRY_RUN:-false}
+ADD_ALL=$(echo "$RAW_DATA" | grep "^ADD_ALL=" | cut -d'=' -f2); ADD_ALL=${ADD_ALL:-true}
+AUTO_TAG=$(echo "$RAW_DATA" | grep "^AUTO_TAG=" | cut -d'=' -f2); AUTO_TAG=${AUTO_TAG:-false}
+SKIP_CI=$(echo "$RAW_DATA" | grep "^SKIP_CI=" | cut -d'=' -f2); SKIP_CI=${SKIP_CI:-false}
+AMEND=$(echo "$RAW_DATA" | grep "^AMEND=" | cut -d'=' -f2); AMEND=${AMEND:-false}
+SQUASH_VAL=$(echo "$RAW_DATA" | grep "^SQUASH_VAL=" | cut -d'=' -f2); SQUASH_VAL=${SQUASH_VAL:-0}
+REBASE=$(echo "$RAW_DATA" | grep "^REBASE=" | cut -d'=' -f2); REBASE=${REBASE:-false}
+STASH_WORK=$(echo "$RAW_DATA" | grep "^STASH_WORK=" | cut -d'=' -f2); STASH_WORK=${STASH_WORK:-false}
+TAG_NAME=$(echo "$RAW_DATA" | grep "^TAG_NAME=" | cut -d'=' -f2)
+
+COMMIT_MSG="build $(date +'%Y-%m-%d %H:%M')"
+SHOULD_PUSH=false
+
+while [[ "$#" -gt 0 ]]; do
+    case $1 in
+        -p|--push) SHOULD_PUSH=true ;;
+        -r) SELECTED_REPO="$2"; shift ;;
+        -b) SELECTED_BRANCH="$2"; shift ;;
+        -m) COMMIT_MSG="$2"; shift ;;
+        -f) FORCE_PUSH=true ;;
+        +f) FORCE_PUSH=false ;;
+        --pull) PULL_BEFORE=true ;;
+        +pull) PULL_BEFORE=false ;;
+        -l) GENERATE_LOG=true ;;
+        +l) GENERATE_LOG=false ;;
+        -d) DRY_RUN=true ;;
+        +d) DRY_RUN=false ;;
+        -s) ADD_ALL=false ;;
+        +s) ADD_ALL=true ;;
+        -t) AUTO_TAG=true; TAG_NAME="$2"; shift ;;
+        +t) AUTO_TAG=false; TAG_NAME="" ;;
+        --skip-ci) SKIP_CI=true ;;
+        +skip-ci) SKIP_CI=false ;;
+        --amend) AMEND=true ;;
+        +amend) AMEND=false ;;
+        --squash) SQUASH_VAL="$2"; shift ;;
+        --rebase) REBASE=true ;;
+        +rebase) REBASE=false ;;
+        --stash) STASH_WORK=true ;;
+        +stash) STASH_WORK=false ;;
+        *) ;;
+    esac
+    shift
+done
+
+if [ -n "$SELECTED_REPO" ]; then LATEST_REPO="$SELECTED_REPO"; fi
+if [ -n "$SELECTED_BRANCH" ]; then LATEST_BRANCH="$SELECTED_BRANCH"; fi
+if [ -z "$LATEST_REPO" ]; then exit 1; fi
+if [ -z "$LATEST_BRANCH" ]; then LATEST_BRANCH="main"; fi
+
+REMOTE_URL="https://github.com/iammuntakim/${LATEST_REPO}.git"
+
+_encode "$LATEST_REPO" "$LATEST_BRANCH" "$REMOTE_URL" "$FORCE_PUSH" "$PULL_BEFORE" "$GENERATE_LOG" "$DRY_RUN" "$ADD_ALL" "$AUTO_TAG" "$SKIP_CI" "$AMEND" "$SQUASH_VAL" "$REBASE" "$STASH_WORK" "$TAG_NAME"
+
+if [ "$SHOULD_PUSH" = false ]; then
+    exit 0
+fi
+
+if [ "$DRY_RUN" = true ]; then
+    exit 0
+fi
+
+if [ ! -d .git ]; then git init; fi
+
+if git remote | grep -q "^origin$"; then
+    git remote set-url origin "$REMOTE_URL"
+else
+    git remote add origin "$REMOTE_URL"
+fi
+
+if [ "$STASH_WORK" = true ]; then git stash; fi
+
+git fetch origin "$LATEST_BRANCH" 2>/dev/null
+CURRENT_LOCAL_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
+
+if [ "$CURRENT_LOCAL_BRANCH" != "$LATEST_BRANCH" ]; then
+    git checkout -b "$LATEST_BRANCH" "origin/$LATEST_BRANCH" 2>/dev/null || \
+    git checkout -b "$LATEST_BRANCH" 2>/dev/null || \
+    git checkout "$LATEST_BRANCH"
+fi
+
+if [ "$REBASE" = true ]; then
+    git pull --rebase origin "$LATEST_BRANCH"
+elif [ "$PULL_BEFORE" = true ]; then
+    git pull origin "$LATEST_BRANCH"
+fi
+
+if [ "$STASH_WORK" = true ]; then git stash pop; fi
+
+if [ "$ADD_ALL" = true ]; then git add .; fi
+
+if [ "$SKIP_CI" = true ]; then COMMIT_MSG="$COMMIT_MSG [skip ci]"; fi
+
+if [ "$SQUASH_VAL" -gt 0 ]; then
+    git reset --soft HEAD~"$SQUASH_VAL"
+    git commit -m "$COMMIT_MSG"
+elif [ "$AMEND" = true ]; then
+    git commit --amend --no-edit
+elif ! git diff-index --quiet HEAD -- 2>/dev/null; then
+    git commit -m "$COMMIT_MSG"
+fi
+
+if [ "$AUTO_TAG" = true ] && [ -n "$TAG_NAME" ]; then
+    git tag -a "$TAG_NAME" -m "Release $TAG_NAME"
+    git push origin "$TAG_NAME"
+fi
+
+PUSH_FLAGS=""
+if [ "$FORCE_PUSH" = true ]; then PUSH_FLAGS="--force"; fi
+
+if [ "$GENERATE_LOG" = true ]; then
+    LOG_DIR="$CONFIG_DIR/logs"
+    mkdir -p "$LOG_DIR"
+    git push origin "$LATEST_BRANCH" $PUSH_FLAGS 2>&1 | tee "$LOG_DIR/$(date +%s).log"
+else
+    git push origin "$LATEST_BRANCH" $PUSH_FLAGS
+fi
