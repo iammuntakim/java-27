@@ -1,4 +1,4 @@
-package jdk.internal.runtime.classes;
+package java.share.classes;
 
 public final class Shared {
 
