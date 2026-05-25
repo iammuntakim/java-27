@@ -10,14 +10,27 @@ import java.util.List;
 import java.util.Map;
 import java.util.HashMap;
 import java.util.Objects;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.stream.Collectors;
+import java.util.Arrays;
+import java.util.Optional;
 
 public class Runtime {
 
     private static final Runtime currentRuntime = new Runtime();
     private static Version version;
+    private static final Map<String, Object> metadata = new ConcurrentHashMap<>();
+    private static final AtomicLong bootTime = new AtomicLong(System.currentTimeMillis());
 
     private final List<Thread> shutdownHooks = new ArrayList<>();
     private boolean shutdownInProgress = false;
+    private final ExecutorService taskExecutor = Executors.newFixedThreadPool(
+        Math.max(2, Runtime.getRuntime().availableProcessors())
+    );
 
     private Runtime() {}
 
@@ -33,6 +46,14 @@ public class Runtime {
             shutdownInProgress = true;
         }
         runShutdownHooks();
+        taskExecutor.shutdown();
+        try {
+            if (!taskExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
+                taskExecutor.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            taskExecutor.shutdownNow();
+        }
         halt(status);
     }
 
@@ -89,8 +110,8 @@ public class Runtime {
     }
 
     public Process exec(String command, String[] envp, File dir) throws IOException {
-        if (command.isEmpty()) {
-            throw new IllegalArgumentException("Empty command");
+        if (command == null || command.isEmpty()) {
+            throw new IllegalArgumentException("Invalid command");
         }
         StringTokenizer st = new StringTokenizer(command);
         String[] cmdarray = new String[st.countTokens()];
@@ -115,11 +136,6 @@ public class Runtime {
         }
         for (String arg : cmdarray) {
             Objects.requireNonNull(arg);
-        }
-        if (envp != null) {
-            for (String env : envp) {
-                Objects.requireNonNull(env);
-            }
         }
         return new ProcessBuilder(cmdarray)
             .environment(envp)
@@ -174,6 +190,28 @@ public class Runtime {
             version = new Version(27, 0, 0);
         }
         return version;
+    }
+
+    public void registerMetadata(String key, Object value) {
+        metadata.put(key, value);
+    }
+
+    public Optional<Object> getMetadata(String key) {
+        return Optional.ofNullable(metadata.get(key));
+    }
+
+    public double getUptimeMinutes() {
+        return (double) (System.currentTimeMillis() - bootTime.get()) / 60000.0;
+    }
+
+    public void executeAsync(Runnable task) {
+        taskExecutor.submit(task);
+    }
+
+    public List<String> getSystemPropertiesSnapshot() {
+        return System.getProperties().entrySet().stream()
+            .map(e -> e.getKey().toString() + "=" + e.getValue().toString())
+            .collect(Collectors.toList());
     }
 
     public static final class Version implements Comparable<Version> {
@@ -285,5 +323,8 @@ public class Runtime {
 
         @Override
         public void destroy() { target.destroy(); }
+        
+        @Override
+        public ProcessHandle toHandle() { return target.toHandle(); }
     }
 }

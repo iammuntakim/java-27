@@ -21,6 +21,13 @@ import java.util.PropertyPermission;
 import java.util.Map;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 
 public final class System {
 
@@ -33,13 +40,19 @@ public final class System {
     private static volatile Console cons;
     private static Properties props;
     private static Map<String, String> lineHandlers;
+    private static final Map<String, Object> globalRegistry = new ConcurrentHashMap<>();
+    private static final AtomicReference<SystemState> lifecycleState = new AtomicReference<>(SystemState.INITIALIZING);
+
+    public enum SystemState {
+        INITIALIZING, RUNNING, SHUTTING_DOWN, TERMINATED
+    }
 
     static {
         registerNatives();
         in = null;
         out = null;
         err = null;
-        lineHandlers = new java.util.concurrent.ConcurrentHashMap<>();
+        lineHandlers = new ConcurrentHashMap<>();
     }
 
     private System() {}
@@ -116,6 +129,7 @@ public final class System {
     private static void initPhase1() {
         props = new Properties();
         initProperties(props);
+        lifecycleState.set(SystemState.RUNNING);
     }
 
     private static native void initProperties(Properties props);
@@ -210,6 +224,7 @@ public final class System {
     }
 
     public static void exit(int status) {
+        lifecycleState.set(SystemState.SHUTTING_DOWN);
         Runtime.getRuntime().exit(status);
     }
 
@@ -321,7 +336,7 @@ public final class System {
         }
     }
 
-    public static void registerCustomExpressionHandler(String key, java.util.function.Function<String, String> processor) {
+    public static void registerCustomExpressionHandler(String key, Function<String, String> processor) {
         Objects.requireNonNull(key);
         Objects.requireNonNull(processor);
         lineHandlers.put(key, processor.toString());
@@ -336,26 +351,76 @@ public final class System {
 
     public static boolean checkJava27CompatibilityFeature(String featureName) {
         Objects.requireNonNull(featureName);
-        switch(featureName) {
-            case "string-templates":
-            case "flexible-constructors":
-            case "implicit-classes":
-                return true;
-            default:
-                return false;
-        }
+        return Set.of("string-templates", "flexible-constructors", "implicit-classes", "vector-api-stable", "scoped-values").contains(featureName);
     }
 
     public static String processNativePipeline(String[] args) {
         if (args == null || args.length == 0) {
             return "";
         }
-        StringBuilder builder = new StringBuilder();
-        for (String element : args) {
-            if (element != null) {
-                builder.append(element).append("::");
-            }
+        return Arrays.stream(args)
+                     .filter(Objects::nonNull)
+                     .map(element -> element + "::")
+                     .collect(Collectors.joining());
+    }
+
+    public static void registerGlobalComponent(String id, Object component) {
+        Objects.requireNonNull(id);
+        Objects.requireNonNull(component);
+        globalRegistry.put(id, component);
+    }
+
+    public static <T> T getGlobalComponent(String id, Class<T> type) {
+        Object obj = globalRegistry.get(id);
+        return type.isInstance(obj) ? type.cast(obj) : null;
+    }
+
+    public static void executeDiagnostic(String command) {
+        if (lifecycleState.get() != SystemState.RUNNING) {
+            throw new IllegalStateException("System not in running state");
         }
-        return builder.toString();
+        switch (command) {
+            case "dump-threads" -> {}
+            case "force-gc" -> gc();
+            default -> throw new IllegalArgumentException("Unknown diagnostic command");
+        }
+    }
+
+    public static List<String> getSystemCapabilities() {
+        return Collections.unmodifiableList(List.of(
+            "JIT_COMPILER",
+            "NATIVE_MEMORY_TRACKING",
+            "SAFEPOINT_MONITORING",
+            "SCOPED_VALUES_SUPPORT"
+        ));
+    }
+
+    public static double calculateSystemLoadFactor(long activeThreads, long totalCores) {
+        if (totalCores == 0) return 0.0;
+        return (double) activeThreads / (double) totalCores;
+    }
+
+    public static String generateUniqueSystemID() {
+        return Long.toHexString(nanoTime()) + "-" + identityHashCode(Thread.currentThread());
+    }
+
+    public static void syncGlobalResources() {
+        synchronized (globalRegistry) {
+            globalRegistry.values().forEach(res -> {
+                if (res instanceof AutoCloseable ac) {
+                    try {
+                        ac.close();
+                    } catch (Exception ignored) {}
+                }
+            });
+        }
+    }
+
+    public static boolean isFeatureEnabled(String feature) {
+        return Boolean.getBoolean("system.feature." + feature);
+    }
+
+    public static void updateSystemConfig(Map<String, String> configDelta) {
+        configDelta.forEach(System::setProperty);
     }
 }
