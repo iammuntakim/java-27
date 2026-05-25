@@ -13,43 +13,6 @@ Open Source and Intellectual Property Notice
 * Zero Commercial Intent: This software is published with no commercial intent, provides no financial gain, and is intended solely to understand internal JVM mechanics. It does not distribute proprietary binaries or closed-source modifications belonging to any single entity.
 * Copyright Status: This project is explicitly released into the public domain with no copyright claimed by the author. It is a community-facing, open research asset designed to foster legal, open educational collaboration without infringing on corporate trademarks or proprietary distribution models.
 
-Repository Architecture
-
-The project features a standard Gradle-based multi-project structure mirroring core JDK hierarchies to inject or evaluate custom implementations of fundamental runtime classes.
-
-├── app/
-│   ├── build.gradle.kts
-│   └── src/
-│       └── main/
-│           └── java/
-│               ├── java/
-│               │   └── base/
-│               │       └── share/
-│               │           └── classes/
-│               │               └── java/
-│               │                   └── lang/
-│               │                       ├── Class.java
-│               │                       ├── ClassLoader.java
-│               │                       ├── Compiler.java
-│               │                       ├── Runtime.java
-│               │                       ├── String.java
-│               │                       ├── System.java
-│               │                       ├── Thread.java
-│               │                       └── ThreadGroup.java
-│               └── jdk/
-│                   └── internal/
-│                       └── main/
-│                           └── runtime/
-│                               └── classes/
-│                                   └── Shared.java
-├── gradle/
-│   ├── libs.versions.toml
-│   └── wrapper/
-├── build.gradle.kts
-├── settings.gradle.kts
-├── gradlew
-└── gradlew.bat
-
 Key Components Under Evaluation
 
 * java.lang.System / Runtime / Class: Intercepts vital platform workflows, permitting custom logic injection into memory management, reflection arrays, and basic native bindings.
