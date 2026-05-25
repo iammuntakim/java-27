@@ -1,37 +1,36 @@
 name: build
 
 on:
-    push:
-        branches: [ "main" ]
-    pull_request:
+  push:
+    branches: [ "main" ]
+  pull_request:
 
 jobs:
-    build:
-        runs-on: ubuntu-latest
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Required to create a release
+    
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
 
-        steps:
-            - name: Checkout repo
-              uses: actions/checkout@v4
+      - name: Setup JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 25
 
-            - name: Setup JDK
-              uses: actions/setup-java@v4
-              with:
-                  distribution: temurin
-                  java-version: 25
+      - name: Grant gradlew permission
+        run: chmod +x gradlew
 
-            - name: Grant gradlew permission
-              run: chmod +x gradlew
+      - name: Build plugin
+        run: ./gradlew build
 
-            - name: Build plugin
-              run: ./gradlew build
-
-            - name: Check build directory
-              run: find . -name "*.jar"
-              
-            - name: Upload final build
-              uses: actions/upload-artifact@v4
-              with:
-                  name: plugin-build-artifacts
-                  path: app/build/libs/**
-                  if-no-files-found: error
-                  compression-level: 0
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        if: github.event_name == 'push'
+        with:
+          tag_name: build-${{ github.run_number }}
+          files: app/build/libs/*.jar
+          token: ${{ secrets.GITHUB_TOKEN }}
